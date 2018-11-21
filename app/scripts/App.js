@@ -42,6 +42,10 @@ export default class App {
         this.materialShader = []
         this.afterimagePass
 
+        this.amp = 5
+        this.sound.onKickDetected = this.onKickDetected.bind(this)
+        this.sound.offKickDetected = this.offKickDetected.bind(this)
+
         this.camera = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 1000000 );
         this.camera.position.z = 3 ;
 
@@ -55,11 +59,15 @@ export default class App {
         for (let i = 0; i < 2; i++) {
            this.setTerrain(i) 
         }
+
+        this.setWind()
+
         this.setBuiding()
 
         this.setMainGroupOptions()
 
         this.scene.add(this.mainGroup)
+
         
         
         this.renderer = new THREE.WebGLRenderer( { antialias: true } );
@@ -81,9 +89,24 @@ export default class App {
         
         this.onWindowResize();
     }
+
+    onKickDetected() {
+        this.amp = 10
+        this.materialShader.forEach(el => {
+            el.uniforms.u_amp.value = this.amp
+        });
+    }
+
+    offKickDetected() {
+        this.amp = 5
+        this.materialShader.forEach(el => {
+            el.uniforms.u_amp.value = this.amp
+        });
+    }
+
     setSceneOptions() {
         this.scene.background = new THREE.Color(0x1E1E1E);
-       // this.scene.fog = new THREE.Fog(0x050505, 0, 50);
+        this.scene.fog = new THREE.Fog(0x050505, 0, 50);
     }
 
     setlights() {
@@ -109,8 +132,10 @@ export default class App {
     }
 
     setTerrain(i) {
-        let transform = [
-            "vec3 transformed = vec3(position.x, position.y, snoise(vec3(position.x/20., position.y/20. + u_time, 0)) * .8);",
+        console.log(this.amp);
+        
+        this.shaderTransform = [
+            `vec3 transformed = vec3(position.x, position.y, snoise(vec3(position.x/20., position.y/20. + u_time, 0)) * u_amp);`,
             'vec3 transformed = vec3( position ) * m;'
     ]
         let geometry = new THREE.PlaneBufferGeometry(150, 70, 512,512);
@@ -119,15 +144,19 @@ export default class App {
             shader.uniforms.u_time = {
                 value: 1.0, type: "f"
             };
-            shader.vertexShader = 'uniform float u_time;\n' + fragmentShaderNoise + '\n' + shader.vertexShader;
+            shader.uniforms.u_amp = {
+                value: this.amp, type: "f"
+            };
+            shader.vertexShader = 'uniform float u_time;\n' + 'uniform float u_amp;\n'+ fragmentShaderNoise + '\n' + shader.vertexShader;
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <begin_vertex>',
                 [
+                    
                     `float theta = sin( u_time + position.y ) / 2.;`,
                     `float c = cos( .5+ (theta*${i+1}.)/3.);`,
                     `float s = sin( .5+(theta*${i+1}.)/3.);`,
                     'mat3 m = mat3( c, 0, s, 0, 1, 0, -s, 0, c );',
-                    transform[0],
+                    this.shaderTransform[0],
                     'vNormal = vNormal * m;'
                 ].join('\n')
             );
@@ -142,7 +171,7 @@ export default class App {
         // this.landScape.position.y = 3
         landScape.receiveShadow = true
         landScape.castShadow = true
-        if (i === 1) landScape.rotation.z = Math.PI/2 + 1
+        // if (i === 1) landScape.rotation.z = Math.PI/2 + 1
         landScape.position.y = -1
         this.mainGroup.add(landScape)
         
@@ -160,6 +189,18 @@ export default class App {
         //     console.log(shader.vertexShader);
         //     this.landShader = shader;
         // }
+    }
+
+    setWind() {
+        let geometry = new THREE.PlaneBufferGeometry(50, 50, 512, 512);
+        var material = new THREE.MeshStandardMaterial({
+            wireframe: true,
+            side: THREE.doubleSide
+        });
+        this.wind = new THREE.Mesh(geometry, material);
+        this.wind.rotation.y = Math.PI/2
+        this.wind.position.x = -50
+        this.mainGroup.add(this.wind)
     }
 
     setBuiding() {
@@ -182,9 +223,16 @@ export default class App {
         if (this.materialShader) {
             this.materialShader.forEach(el => {  
                 el.uniforms.u_time.value = time
+               
             });
         }
-        this.composer.render( this.scene, this.camera );
+        if (this.wind.position.x > 50) {
+            this.wind.position.x = -50
+        }
+        this.wind.position.x += 1
+        //this.composer.render( this.scene, this.camera );
+        this.renderer.render(this.scene, this.camera);
+
     }
 
     onWindowResize() {

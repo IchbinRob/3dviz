@@ -51,7 +51,7 @@ module.exports = function(env) {
     return {
         context: path.resolve(__dirname, 'app'),
         devServer: {
-            host: "0.0.0.0",
+            host: "localhost",
             disableHostCheck: true
         },
         entry: {

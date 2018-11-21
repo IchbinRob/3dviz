@@ -329,7 +329,6 @@ class Kick {
     }
 
     on() {
-
         this.isOn = true;
     }
 
