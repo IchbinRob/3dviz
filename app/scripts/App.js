@@ -3,15 +3,22 @@
 
 // TODO : add Dat.GUI
 // TODO : add Stats
+import './controls/OrbitControls'
 import vertexShaderTerrain from './vertex.vert'
-import fragmentShaderNoise from './fragment.frag'
-import './utils/BufferGeometryUtils'
-import './shaders/NormalMapShader'
-import './ShaderTerrain'
+import fragmentShaderNoise from './noise.frag'
+
+import './shaders/CopyShader'
+import './shaders/AfterimageShader'
+
+import './pp/EffectComposer'
+import './pp/RenderPass'
+import './pp/MaskPass'
+import './pp/ShaderPass'
+import './pp/AfterimagePass'
+
 import SoundController from './SoundController'
 //Assets
 
-// 157
 import Track1 from '../assets/Soft and Furious - The truth about RW - 01 Morph.mp3'
 import Track2 from '../assets/Soft and Furious - The truth about RW - 02 Whats your name again.mp3'
 import Track3 from '../assets/Soft and Furious - The truth about RW - 03 S T A F.mp3'
@@ -32,42 +39,51 @@ export default class App {
         document.body.appendChild( this.container );
         let index = 6
         this.sound = new SoundController(SrcMusic, Bpm, index)
+        this.materialShader = []
+        this.afterimagePass
 
-        // let textureLoader = new THREE.TextureLoader();
-        // let texture = textureLoader.load(imgTexture);
-        this.uniformsNoise
-        this.uniformsNormal
-        this.uniformsTerrain
-        this.heightMap
-        this.normalMap
-        this.mlib = {}
-        this.terrain
+        this.camera = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 1000000 );
+        this.camera.position.z = 3 ;
 
-        this.camera = new THREE.PerspectiveCamera( 150, window.innerWidth / window.innerHeight, 0.1, 10 );
-        this.camera.position.z = 1;
 
-        this.sceneRenderTarget = new THREE.Scene();
-    	this.scene = new THREE.Scene();
-
+        this.scene = new THREE.Scene();
+        
+        this.mainGroup = new THREE.Group
+        
         this.setSceneOptions()
         this.setlights()
-        this.setTerrain()
+        for (let i = 0; i < 2; i++) {
+           this.setTerrain(i) 
+        }
+        this.setBuiding()
 
+        this.setMainGroupOptions()
 
-    	this.renderer = new THREE.WebGLRenderer( { antialias: true } );
+        this.scene.add(this.mainGroup)
+        
+        
+        this.renderer = new THREE.WebGLRenderer( { antialias: true } );
+        this.renderer.shadowMap.enabled = true;
     	this.renderer.setPixelRatio( window.devicePixelRatio );
     	this.renderer.setSize( window.innerWidth, window.innerHeight );
     	this.container.appendChild( this.renderer.domElement );
+        var controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
 
     	window.addEventListener('resize', this.onWindowResize.bind(this), false);
-        this.onWindowResize();
-
+        
+        this.composer = new THREE.EffectComposer(this.renderer);
+        this.composer.addPass(new THREE.RenderPass(this.scene, this.camera));
+        this.afterimagePass = new THREE.AfterimagePass();
+        this.afterimagePass.renderToScreen = true;
+        this.composer.addPass(this.afterimagePass);
+        
         this.renderer.animate( this.render.bind(this) );
+        
+        this.onWindowResize();
     }
-
     setSceneOptions() {
-        this.scene.background = new THREE.Color(0x050505);
-        this.scene.fog = new THREE.Fog(0x050505, 2000, 4000);
+        this.scene.background = new THREE.Color(0x1E1E1E);
+       // this.scene.fog = new THREE.Fog(0x050505, 0, 50);
     }
 
     setlights() {
@@ -75,124 +91,108 @@ export default class App {
         this.scene.add(ambLight)
 
 
-        let dirLight = new THREE.DirectionalLight(0xffffff, 0.2)
-        this.scene.add(dirLight)
+        this.dirLight = new THREE.SpotLight(0xffffff, 0.1)
+        this.dirLight.castShadow = true
+        this.dirLight.position.y = 50
+        this.dirLight.position.x = 75
+        this.dirLight.position.z = -100
+        this.dirLight.shadow.camera.fov = 30;
+        this.dirLight.shadow.camera.near = 100;
+        this.dirLight.shadow.camera.far = 200;
+        this.dirLight.shadow.mapSize.width = 1024; // default
+        this.dirLight.shadow.mapSize.height = 1024; // default
+        this.dirLight.penumbra = 1; // default
+        this.mainGroup.add(this.dirLight)
+
+        var helper = new THREE.CameraHelper(this.dirLight.shadow.camera);
+        this.mainGroup.add(helper);
     }
 
-    setTerrain() {
-        // HEIGHT + NORMAL MAPS
-
-        var normalShader = THREE.NormalMapShader;
-
-        var rx = 256,
-            ry = 256;
-        var pars = {
-            minFilter: THREE.LinearFilter,
-            magFilter: THREE.LinearFilter,
-            format: THREE.RGBFormat
+    setTerrain(i) {
+        let transform = [
+            "vec3 transformed = vec3(position.x, position.y, snoise(vec3(position.x/20., position.y/20. + u_time, 0)) * .8);",
+            'vec3 transformed = vec3( position ) * m;'
+    ]
+        let geometry = new THREE.PlaneBufferGeometry(150, 70, 512,512);
+        var material = new THREE.MeshStandardMaterial();
+        material.onBeforeCompile = (shader) => {
+            shader.uniforms.u_time = {
+                value: 1.0, type: "f"
+            };
+            shader.vertexShader = 'uniform float u_time;\n' + fragmentShaderNoise + '\n' + shader.vertexShader;
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                [
+                    `float theta = sin( u_time + position.y ) / 2.;`,
+                    `float c = cos( .5+ (theta*${i+1}.)/3.);`,
+                    `float s = sin( .5+(theta*${i+1}.)/3.);`,
+                    'mat3 m = mat3( c, 0, s, 0, 1, 0, -s, 0, c );',
+                    transform[0],
+                    'vNormal = vNormal * m;'
+                ].join('\n')
+            );
+            
+            this.materialShader.push(shader)
         };
 
-        this.heightMap = new THREE.WebGLRenderTarget(rx, ry, pars);
-        this.heightMap.texture.generateMipmaps = false;
+        let landScape = new THREE.Mesh(geometry, material);
+        
+        landScape.rotation.x = -Math.PI/2
+        // this.landScape.position.z = -5
+        // this.landScape.position.y = 3
+        landScape.receiveShadow = true
+        landScape.castShadow = true
+        if (i === 1) landScape.rotation.z = Math.PI/2 + 1
+        landScape.position.y = -1
+        this.mainGroup.add(landScape)
+        
 
-        this.normalMap = new THREE.WebGLRenderTarget(rx, ry, pars);
-        this.normalMap.texture.generateMipmaps = false;
+        // let landMat = new THREE.MeshLambertMaterial({
+        //     color: 0xd3c7a2
+        // });
+        // landMat.onBeforeCompile = (shader) => {
+        //     shader.uniforms.u_time = {value: 1.0,type: “f”}
+        //     shader.vertexShader = ‘uniform float u_time;\n’ + random + ‘\n’ + shader.vertexShader;
+        //     shader.vertexShader = shader.vertexShader.replace(
+        //         ‘#include <begin_vertex>’,
+        //         ‘vec3 transformed = vec3(position.x, position.y, (smoothstep(3.55, 4.0, position.x) + smoothstep(-3.55, -4., position.x)) * snoise(vec3(position.x, position.y + u_time, 0)) * 4.);’
+        //     );
+        //     console.log(shader.vertexShader);
+        //     this.landShader = shader;
+        // }
+    }
 
-        this.uniformsNoise = {
+    setBuiding() {
+        let geometry = new THREE.BoxBufferGeometry(3, 5, 1)
+        var material = new THREE.MeshStandardMaterial();
 
-            time: {
-                value: 1.0
-            },
-            scale: {
-                value: new THREE.Vector2(1.5, 1.5)
-            },
-            offset: {
-                value: new THREE.Vector2(0, 0)
-            }
+        var cube = new THREE.Mesh(geometry, material);
+        cube.receiveShadow = true
+        cube.castShadow = true
+        this.mainGroup.add(cube);
 
-        };
+    }
 
-        this.uniformsNormal = THREE.UniformsUtils.clone(normalShader.uniforms);
-
-        this.uniformsNormal.height.value = 0.05;
-        this.uniformsNormal.resolution.value.set(rx, ry);
-        this.uniformsNormal.heightMap.value = this.heightMap.texture;
-
-        var vertexShader = vertexShaderTerrain;
-        // TEXTURES
-        var loadingManager = new THREE.LoadingManager(function () {
-            terrain.visible = true;
-        });
-        var textureLoader = new THREE.TextureLoader(loadingManager);
-        var specularMap = new THREE.WebGLRenderTarget(2048, 2048, pars);
-        specularMap.texture.generateMipmaps = false;
-        // var diffuseTexture1 = textureLoader.load("textures/terrain/grasslight-big.jpg");
-        // var diffuseTexture2 = textureLoader.load("textures/terrain/backgrounddetailed6.jpg");
-        // var detailTexture = textureLoader.load("textures/terrain/grasslight-big-nm.jpg");
-        // diffuseTexture1.wrapS = diffuseTexture1.wrapT = THREE.RepeatWrapping;
-        // diffuseTexture2.wrapS = diffuseTexture2.wrapT = THREE.RepeatWrapping;
-        // detailTexture.wrapS = detailTexture.wrapT = THREE.RepeatWrapping;
-        specularMap.texture.wrapS = specularMap.texture.wrapT = THREE.RepeatWrapping;
-        // TERRAIN SHADER
-        var terrainShader = THREE.ShaderTerrain["terrain"];
-        this.uniformsTerrain = THREE.UniformsUtils.clone(terrainShader.uniforms);
-        this.uniformsTerrain['tNormal'].value = this.normalMap.texture;
-        this.uniformsTerrain['uNormalScale'].value = 3.5;
-        this.uniformsTerrain['tDisplacement'].value = this.heightMap.texture;
-        // this.uniformsTerrain['tDiffuse1'].value = diffuseTexture1;
-        // this.uniformsTerrain['tDiffuse2'].value = diffuseTexture2;
-        this.uniformsTerrain['tSpecular'].value = specularMap.texture;
-        // this.uniformsTerrain['tDetail'].value = detailTexture;
-        this.uniformsTerrain['enableDiffuse1'].value = true;
-        this.uniformsTerrain['enableDiffuse2'].value = true;
-        this.uniformsTerrain['enableSpecular'].value = true;
-        this.uniformsTerrain['diffuse'].value.setHex(0xffffff);
-        this.uniformsTerrain['specular'].value.setHex(0xffffff);
-        this.uniformsTerrain['shininess'].value = 30;
-        this.uniformsTerrain['uDisplacementScale'].value = 375;
-        this.uniformsTerrain['uRepeatOverlay'].value.set(6, 6);
-        var params = [
-            ['heightmap', fragmentShaderNoise, vertexShader, this.uniformsNoise, false],
-            ['normal', normalShader.fragmentShader, normalShader.vertexShader, this.uniformsNormal, false],
-            ['terrain', terrainShader.fragmentShader, terrainShader.vertexShader, this.uniformsTerrain, true]
-        ];
-        for (var i = 0; i < params.length; i++) {
-            var material = new THREE.ShaderMaterial({
-                uniforms: params[i][3],
-                vertexShader: params[i][2],
-                fragmentShader: params[i][1],
-                lights: params[i][4],
-                fog: true
-            });
-            this.mlib[params[i][0]] = material;
-        }
-        var plane = new THREE.PlaneBufferGeometry(window.innerWidth, window.innerHeight);
-        this.quadTarget = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({
-            color: 0x000000
-        }));
-        this.quadTarget.position.z = -500;
-        this.sceneRenderTarget.add(this.quadTarget);
-        // TERRAIN MESH
-        var geometryTerrain = new THREE.PlaneBufferGeometry(6000, 6000, 256, 256);
-        THREE.BufferGeometryUtils.computeTangents(geometryTerrain);
-        this.terrain = new THREE.Mesh(geometryTerrain, this.mlib['terrain']);
-        this.terrain.position.set(0, -125, 0);
-        this.terrain.rotation.x = -Math.PI / 2;
-        this.terrain.visible = false;
-        this.scene.add(this.terrain);
+    setMainGroupOptions() {
+      //  this.mainGroup.rotation.x = -0.5
     }
 
     render() {
         let time = performance.now() / 1000
-    
-    	this.renderer.render( this.scene, this.camera );
+        if (this.materialShader) {
+            this.materialShader.forEach(el => {  
+                el.uniforms.u_time.value = time
+            });
+        }
+        this.composer.render( this.scene, this.camera );
     }
 
     onWindowResize() {
 
     	this.camera.aspect = window.innerWidth / window.innerHeight;
     	this.camera.updateProjectionMatrix();
-    	this.renderer.setSize( window.innerWidth, window.innerHeight );
+        this.renderer.setSize( window.innerWidth, window.innerHeight );
+        this.composer.setSize(window.innerWidth, window.innerHeight);
     }
 
 }

@@ -7,6 +7,6 @@ export default class SoundController {
 
     playSound() {
         console.log('coucou');
-       // this.audioAnalyzer.play()
+        this.audioAnalyzer.play()
     }
-}
+} 
