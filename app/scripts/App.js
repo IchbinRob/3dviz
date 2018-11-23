@@ -10,12 +10,15 @@ import fragmentPCSS from './PCSS.frag'
 
 import './shaders/CopyShader'
 import './shaders/AfterimageShader'
+import './shaders/DigitalGlitch'
 
 import './pp/EffectComposer'
+import './pp/SSAARenderPass'
 import './pp/RenderPass'
 import './pp/MaskPass'
 import './pp/ShaderPass'
 import './pp/AfterimagePass'
+import './pp/GlitchPass'
 
 import SoundController from './SoundController'
 //Assets
@@ -34,20 +37,19 @@ const Bpm = [157, 92, 130, 156, 126, 120, 140]
 
 export default class App {
 
-    constructor() {
+    constructor(quality) {
 
         this.container = document.querySelector( '#main' );
         document.body.appendChild( this.container );
         let index = 6
         this.sound = new SoundController(SrcMusic, Bpm, index)
+        this.sound.musicReady = this.musicReady.bind(this)
         this.materialShader = []
         this.afterimagePass
+        this.zoom = 0
+        this.cameraMoveScale = 5
 
-        this.amp = 0.5
-        this.sound.onKickDetected = this.onKickDetected.bind(this)
-        this.sound.offKickDetected = this.offKickDetected.bind(this)
-
-        this.camera = new THREE.PerspectiveCamera( 170, window.innerWidth / window.innerHeight, 0.1, 1000000 );
+        this.camera = new THREE.PerspectiveCamera( 180, this.WIDTH / this.HEIGHT, 0.1, 1000000 );
         this.camera.position.z = 3
         this.camera.position.y = -1
         this.camera.rotation.x = 0.5
@@ -60,13 +62,12 @@ export default class App {
         this.setSceneOptions()
         this.setlights()
 
-        for (let i = 0; i < 1; i++) {
-           this.setTerrain(i) 
-        }
+        this.setTerrain() 
 
         this.setWind()
 
         this.setBuiding()
+
 
         this.setMainGroupOptions()
 
@@ -87,42 +88,122 @@ export default class App {
         this.renderer = new THREE.WebGLRenderer( { antialias: true } );
         // this.renderer.gammaInput = true;
         // this.renderer.gammaOutput = true;
+        this.quality = quality
+
         this.renderer.shadowMap.enabled = true;
-    	this.renderer.setPixelRatio( window.devicePixelRatio );
-    	this.renderer.setSize( window.innerWidth, window.innerHeight );
-    	this.container.appendChild( this.renderer.domElement );
-        //var controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.renderer.setPixelRatio( window.devicePixelRatio );
+        this.HEIGHT = (window.innerHeight) / this.quality
+        this.WIDTH = (window.innerHeight*4/3) / this.quality
+        this.renderer.setSize( this.WIDTH, this.HEIGHT );
+        this.container.appendChild( this.renderer.domElement );
+
+      // var controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
 
     	window.addEventListener('resize', this.onWindowResize.bind(this), false);
         
         this.composer = new THREE.EffectComposer(this.renderer);
         this.composer.addPass(new THREE.RenderPass(this.scene, this.camera));
+     
+
+        
+
+        
+        this.ssaaRenderPass = new THREE.SSAARenderPass(this.scene, this.camera);
+        (this.quality === '1') ? this.ssaaRenderPass.sampleLevel = 2 : this.ssaaRenderPass.sampleLevel = 0
+        
+        this.ssaaRenderPass.unbiased = true;
+        this.composer.addPass(this.ssaaRenderPass);
+
+        // this.copyPass = new THREE.ShaderPass(THREE.CopyShader);
+        // this.copyPass.renderToScreen = true;
+        // this.composer.addPass(this.copyPass);
+
+        this.glitchPass = new THREE.GlitchPass();
+       // this.glitchPass.renderToScreen = true;
+        this.composer.addPass(this.glitchPass);
+
         this.afterimagePass = new THREE.AfterimagePass();
         this.afterimagePass.renderToScreen = true;
         this.composer.addPass(this.afterimagePass);
+
+ 
+
+
+    }
+
+    musicReady() {
+
+        this.amp = 1
+        this.kick = 20.
+        this.sound.onKickDetected = this.onKickDetected.bind(this)
+        this.sound.offKickDetected = this.offKickDetected.bind(this)
+
+        this.sound.onBeat = this.onBeat.bind(this)
+
+        this.sound.cameraMove = this.cameraMove.bind(this)
         
-        this.renderer.animate( this.render.bind(this) );
-        
+        this.renderer.animate(this.render.bind(this));
+
         this.onWindowResize();
     }
 
-    onKickDetected() {
-        if(this.amp <= 2) this.amp += .05
-        this.materialShader.forEach(el => {
-            el.uniforms.u_amp.value = this.amp
-        });
+    onKickDetected(opt, mag) {
+        
+        switch (opt) {
+            case 'saturation':
+                if(this.kick >= 1.) this.kick -= .5
+                this.materialShaderMountain.uniforms.u_kick.value = this.kick
+
+                if (this.amp <= (mag / 255) * 15) this.amp += .05
+                this.materialShaderMountain.uniforms.u_amp.value = this.materialShaderDesert.uniforms.u_amp.value = this.amp
+                break;
+
+            case 'beat':
+                this.glitchPass.goWild = true
+                setTimeout(()=> {
+                    this.glitchPass.goWild = false
+                }, 700)
+                break;
+            default:
+                break;
+        }
+
     }
 
-    offKickDetected() {
-        if(this.amp >= 0) this.amp -= 0.01
-        this.materialShader.forEach(el => {
-            el.uniforms.u_amp.value = this.amp
+    offKickDetected(opt) {
+        if (!this.materialShaderMountain) return;
+
+        switch (opt) {
+            case 'saturation':
+                if (this.kick <= 20.) this.kick += .1
+                if (this.amp >= 0) this.amp -= 0.01
+
+                this.materialShaderMountain.uniforms.u_amp.value = this.materialShaderDesert.uniforms.u_amp.value = this.amp
+                this.materialShaderMountain.uniforms.u_kick.value = this.kick
+                break;
+            default:
+                break;
+        }
+    }
+    
+    cameraMove() {
+        this.cameraMoveScale = 0.5
+    }
+
+    onBeat() {
+        console.log('coucou');
+        this.city
+        this.city.children.forEach(build => {
+            build.scale.y += 1
+            setTimeout(()=> {
+                build.scale.y -= 1
+            }, 500)
         });
     }
 
     setSceneOptions() {
         this.scene.background = new THREE.Color(0x1E1E1E);
-        this.scene.fog = new THREE.Fog(0x050505, 0, 50);
+        this.scene.fog = new THREE.Fog(0x050505, 0, 40);
     }
 
     setlights() {
@@ -130,7 +211,7 @@ export default class App {
         this.scene.add(ambLight)
 
 
-        this.dirLight = new THREE.SpotLight(0xffffff, 0.7, 400)
+        this.dirLight = new THREE.SpotLight(0xffffff, 1, 400)
         this.dirLight.castShadow = true
         this.dirLight.position.z = -30
         this.dirLight.position.y = 175
@@ -147,58 +228,105 @@ export default class App {
         this.scene.add(this.dirLight)
 
         var helper = new THREE.CameraHelper(this.dirLight.shadow.camera);
-        this.scene.add(helper);
+        //this.scene.add(helper);
     }
 
-    setTerrain(i) {
+    setTerrain() {
+
+        let terrain = new THREE.Group()
         this.shaderTransform = [
-            `vec3 transformed = vec3(position.x, position.y, snoise(vec3(position.x/20., position.y/20. + u_time, 0)) * u_amp);`,
-            'vec3 transformed = vec3( position ) * m;'
+            `vec3 transformed = vec3(position.x, position.y, (smoothstep(0., 4.0, position.x)+smoothstep(-0., -4., position.x)) * snoise(vec3(position.x/20., position.y/20. + u_time, 0)) * u_amp);`,
+            'vec3 transformed = vec3( position.x, position.y, (smoothstep(1., 4.0, position.x)+smoothstep(-1., -4., position.x)) * snoise(vec3(position.x/u_kick, position.y/u_kick + u_time, 0)) * u_amp );'
     ]
-        let geometry = new THREE.PlaneBufferGeometry(150, 70, 512,512);
-        var material = new THREE.MeshStandardMaterial({
+        let geometryDesert = new THREE.PlaneBufferGeometry(200, 70, 512,512);
+        var materialDesert = new THREE.MeshStandardMaterial({
             color: new THREE.Color(0x985a02),
             emissive: new THREE.Color(0x49054d),
             metalness: 0,
-            roughness:1,
-
-
-            
+            roughness:1, 
         });
-        material.onBeforeCompile = (shader) => {
+        materialDesert.onBeforeCompile = (shader) => {
             shader.uniforms.u_time = {
                 value: 1.0, type: "f"
             };
             shader.uniforms.u_amp = {
                 value: this.amp, type: "f"
             };
-            shader.vertexShader = 'uniform float u_time;\n' + 'uniform float u_amp;\n'+ fragmentShaderNoise + '\n' + shader.vertexShader;
+            shader.vertexShader = 'uniform float u_time;\n' + 'uniform float u_amp;\n' + fragmentShaderNoise + '\n' + shader.vertexShader;
+
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <begin_vertex>',
                 [
                     
                     `float theta = sin( u_time + position.y ) / 2.;`,
-                    `float c = cos( .5+ (theta*${i+1}.)/3.);`,
-                    `float s = sin( .5+(theta*${i+1}.)/3.);`,
+                    `float c = cos( .5+ (theta*${1}.)/3.);`,
+                    `float s = sin( .5+(theta*${1}.)/3.);`,
                     'mat3 m = mat3( c, 0, s, 0, 1, 0, -s, 0, c );',
                     this.shaderTransform[0],
                     'vNormal = vNormal * m;'
                 ].join('\n')
             );
             
-            this.materialShader.push(shader)
+            this.materialShaderDesert = shader
         };
 
-        let landScape = new THREE.Mesh(geometry, material);
-        
-        landScape.rotation.x = -Math.PI/2
+        let landScapeDesert = new THREE.Mesh(geometryDesert, materialDesert);
+        terrain.add(landScapeDesert)
+
+        let geometryMountain = new THREE.PlaneBufferGeometry(200, 70, 512, 512);
+        var materialMountain = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(0x526d99),
+            emissive: new THREE.Color(0x49054d),
+            metalness: 1,
+            roughness: 0,
+            transparent: true,
+            opacity: .5,
+            wireframe: false
+        });
+        materialMountain.onBeforeCompile = (shader) => {
+            shader.uniforms.u_time = {
+                value: 1.0, type: "f"
+            };
+            shader.uniforms.u_amp = {
+                value: this.amp, type: "f"
+            };
+            shader.uniforms.u_kick = {
+                value: this.kick, type: "f"
+            };
+            shader.vertexShader = 'uniform float u_time;\n' + 'uniform float u_amp;\n' + 'uniform float u_kick;\n' + fragmentShaderNoise + '\n' + shader.vertexShader;
+
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                [
+
+                    `float theta = sin( u_time + position.y ) / 2.;`,
+                    `float c = cos( .5+ (theta*${1}.)/3.);`,
+                    `float s = sin( .5+(theta*${1}.)/3.);`,
+                    'mat3 m = mat3( c, 0, s, 0, 1, 0, -s, 0, c );',
+                    this.shaderTransform[1],
+                    'vNormal = vNormal * m;'
+                ].join('\n')
+            );
+            
+            this.materialShaderMountain = shader
+        };
+
+        let landScapeMountain = new THREE.Mesh(geometryMountain, materialMountain);
+        landScapeMountain.position.z = -1
+        landScapeDesert.castShadow = true
+        landScapeMountain.castShadow = true
+        landScapeDesert.receiveShadow = true
+        landScapeMountain.receiveShadow = true
+        terrain.add(landScapeMountain)
+
+        terrain.rotation.x = -Math.PI/2
         // this.landScape.position.z = -5
         // this.landScape.position.y = 3
-        landScape.receiveShadow = true
-        landScape.castShadow = true
-        if (i === 1) landScape.rotation.z = Math.PI/2 + 1
-        landScape.position.y = -1
-        this.mainGroup.add(landScape)
+        terrain.receiveShadow = true
+        terrain.castShadow = true
+        //if (i === 1) landScape.rotation.z = Math.PI/2 + 1
+        terrain.position.y = -1
+        this.mainGroup.add(terrain)
     }
 
     setWind() {
@@ -272,11 +400,26 @@ export default class App {
 
         for (let i = 0; i < 50; i++) {
             let geometry = new THREE.BoxBufferGeometry(3, Math.random()*50, 1)
-            var material = new THREE.MeshStandardMaterial();
+            var material = new THREE.MeshStandardMaterial({
+                roughness:0,
+            });
             let cube = new THREE.Mesh(geometry, material);
             cube.receiveShadow = true
             cube.castShadow = true
-            cube.position.set(Math.cos(i)*20, 0, Math.cos(i)*2)
+            cube.position.set(Math.cos(i)*20, 0, Math.cos(i)*10)
+            this.city.add(cube)
+        }
+
+
+        for (let i = 0; i < 50; i++) {
+            let geometry = new THREE.BoxBufferGeometry(3, Math.random() * 50, 1)
+            var material = new THREE.MeshStandardMaterial({
+                roughness: 0,
+            });
+            let cube = new THREE.Mesh(geometry, material);
+            cube.receiveShadow = true
+            cube.castShadow = true
+            cube.position.set( - Math.cos(i) * 20, 0, Math.cos(i) * 10)
             this.city.add(cube)
         }
 
@@ -293,21 +436,21 @@ export default class App {
 
     render() {
         this.time = performance.now() / 1000
-        if (this.materialShader) {
-            this.materialShader.forEach(el => {  
-                el.uniforms.u_time.value = this.time
-               
-            });
+        if (this.materialShaderDesert) {
+            this.materialShaderDesert.uniforms.u_time.value = this.time    
+            this.materialShaderMountain.uniforms.u_time.value = this.time 
         }
         // if (this.wind.position.x > 50) {
         //     this.wind.position.x = -50
         // }
         //this.animateWind()
-        if (this.camera.fov > 110) {
-            console.log(this.camera.fov);
-            this.camera.fov -= .05
+        if (this.camera.fov > 80) {
+            //.01
+            this.camera.fov -= .01
             this.camera.updateProjectionMatrix();
-        } 
+        }
+
+        this.camera.lookAt(new THREE.Vector3(Math.sin(this.time / this.cameraMoveScale), Math.cos(this.time / this.cameraMoveScale) + 1, 0))
         this.composer.render( this.scene, this.camera );
         //this.renderer.render(this.scene, this.camera);
 
@@ -315,10 +458,14 @@ export default class App {
 
     onWindowResize() {
 
-    	this.camera.aspect = window.innerWidth / window.innerHeight;
+    	this.camera.aspect = this.WIDTH / this.HEIGHT;
     	this.camera.updateProjectionMatrix();
-        this.renderer.setSize( window.innerWidth, window.innerHeight );
-        this.composer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setSize( this.WIDTH, this.HEIGHT );
+        this.composer.setSize(this.WIDTH, this.HEIGHT);
+        if (this.quality !== 1) {
+            document.querySelector('canvas').style.width = 'inherit'
+            document.querySelector('canvas').style.height = '100vh'
+        }
     }
 
 }
