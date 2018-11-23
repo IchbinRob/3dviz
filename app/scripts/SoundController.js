@@ -82,6 +82,7 @@ export default class SoundController {
         })
         this.audioAnalyzer.after('WOUHOUoff', 320, () => {
             this.cameraMove('off')
+            this.beat.off()
         })
 
 

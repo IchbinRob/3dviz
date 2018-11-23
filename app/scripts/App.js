@@ -230,8 +230,8 @@ export default class App {
     }
 
     setSceneOptions() {
-        this.scene.background = new THREE.Color(0x1E1E1E);
-        this.scene.fog = new THREE.Fog(0x050505, 0, 40);
+        this.scene.background = new THREE.Color(0x05011c);
+        this.scene.fog = new THREE.Fog(0x05011c, 0, 40);
     }
 
     setlights() {

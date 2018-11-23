@@ -1,0 +1,34 @@
+html, body {
+    margin: 0;
+    padding: 0;
+
+    background: #000;
+
+    font-family: sans-serif;
+    overflow: hidden;
+}
+
+canvas {
+    display: block;
+    margin: 0 auto;
+    /* height: 100vh !important;
+    width: 79vw !important; */
+}
+
+.home {
+    position: absolute;
+    background-color: black;
+    height: 100vh;
+    width: 100vw;
+    z-index: 500;
+}
+
+select {
+    position: absolute;
+    display: block;
+    left: 50%;
+    top:50%;
+    transform: translateY(-50%), translateX(calc(-50% -50px));
+    z-index: 999;
+
+}
