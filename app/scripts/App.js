@@ -41,13 +41,17 @@ export default class App {
 
         this.container = document.querySelector( '#main' );
         document.body.appendChild( this.container );
-        let index = 6
+        let index = 0
         this.sound = new SoundController(SrcMusic, Bpm, index)
         this.sound.musicReady = this.musicReady.bind(this)
         this.materialShader = []
         this.afterimagePass
         this.zoom = 0
         this.cameraMoveScale = 5
+        this.cameraMoveSpeed = 1
+        this.isCameraChange = false
+        this.isCameraDecal = false
+        this.stopMove = false
 
         this.camera = new THREE.PerspectiveCamera( 180, this.WIDTH / this.HEIGHT, 0.1, 1000000 );
         this.camera.position.z = 3
@@ -97,7 +101,7 @@ export default class App {
         this.renderer.setSize( this.WIDTH, this.HEIGHT );
         this.container.appendChild( this.renderer.domElement );
 
-      // var controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+       // var controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
 
     	window.addEventListener('resize', this.onWindowResize.bind(this), false);
         
@@ -109,7 +113,7 @@ export default class App {
 
         
         this.ssaaRenderPass = new THREE.SSAARenderPass(this.scene, this.camera);
-        (this.quality === '1') ? this.ssaaRenderPass.sampleLevel = 2 : this.ssaaRenderPass.sampleLevel = 0
+        (this.quality === '1') ? this.ssaaRenderPass.sampleLevel = 1 : this.ssaaRenderPass.sampleLevel = 0
         
         this.ssaaRenderPass.unbiased = true;
         this.composer.addPass(this.ssaaRenderPass);
@@ -140,11 +144,31 @@ export default class App {
 
         this.sound.onBeat = this.onBeat.bind(this)
 
+        this.sound.cameraChange = this.cameraChange.bind(this)
+
         this.sound.cameraMove = this.cameraMove.bind(this)
+
+        this.sound.cameraDecal = this.cameraDecal.bind(this)
         
         this.renderer.animate(this.render.bind(this));
 
         this.onWindowResize();
+    }
+
+    cameraDecal(opt) {
+        if (opt === "on") {
+            this.isCameraDecal = true
+        } else {
+            this.isCameraDecal = false
+        }
+    }
+
+    cameraChange(opt) {
+        if(opt === "on") {
+            this.isCameraChange = true
+        } else {
+            this.isCameraChange = false
+        }
     }
 
     onKickDetected(opt, mag) {
@@ -186,8 +210,12 @@ export default class App {
         }
     }
     
-    cameraMove() {
+    cameraMove(opt) {
         this.cameraMoveScale = 0.5
+        this.cameraMoveSpeed = 2
+        if(opt === 'off') {
+           this.stopMove = true
+        }
     }
 
     onBeat() {
@@ -238,7 +266,7 @@ export default class App {
             `vec3 transformed = vec3(position.x, position.y, (smoothstep(0., 4.0, position.x)+smoothstep(-0., -4., position.x)) * snoise(vec3(position.x/20., position.y/20. + u_time, 0)) * u_amp);`,
             'vec3 transformed = vec3( position.x, position.y, (smoothstep(1., 4.0, position.x)+smoothstep(-1., -4., position.x)) * snoise(vec3(position.x/u_kick, position.y/u_kick + u_time, 0)) * u_amp );'
     ]
-        let geometryDesert = new THREE.PlaneBufferGeometry(200, 70, 512,512);
+        let geometryDesert = new THREE.PlaneBufferGeometry(200, 200, 512,512);
         var materialDesert = new THREE.MeshStandardMaterial({
             color: new THREE.Color(0x985a02),
             emissive: new THREE.Color(0x49054d),
@@ -273,7 +301,7 @@ export default class App {
         let landScapeDesert = new THREE.Mesh(geometryDesert, materialDesert);
         terrain.add(landScapeDesert)
 
-        let geometryMountain = new THREE.PlaneBufferGeometry(200, 70, 512, 512);
+        let geometryMountain = new THREE.PlaneBufferGeometry(200, 200, 512, 512);
         var materialMountain = new THREE.MeshStandardMaterial({
             color: new THREE.Color(0x526d99),
             emissive: new THREE.Color(0x49054d),
@@ -339,15 +367,15 @@ export default class App {
         var maxParticleCount = 1000;
         this.particlePositions;
         this.linesMesh;
-        this.particleCount = 1000;
-        var r = 150;
+        this.particleCount = 500;
+        var r = 100;
         this.rHalf = r / 2;
         this.effectController = {
             showDots: true,
             showLines: true,
-            minDistance: 10,
+            minDistance: 150,
             limitConnections: false,
-            maxConnections: 3,
+            maxConnections: 20,
             particleCount: this.particleCount
         };
 
@@ -356,9 +384,10 @@ export default class App {
         this.particulesColors = new Float32Array(segments * 3);
         var pMaterial = new THREE.PointsMaterial({
             color: 0xFFFFFF,
-            size: 3,
+            size: 1,
             blending: THREE.AdditiveBlending,
             transparent: true,
+            opacity: 0.5,
             sizeAttenuation: false
         });
         particles = new THREE.BufferGeometry();
@@ -440,17 +469,40 @@ export default class App {
             this.materialShaderDesert.uniforms.u_time.value = this.time    
             this.materialShaderMountain.uniforms.u_time.value = this.time 
         }
-        // if (this.wind.position.x > 50) {
-        //     this.wind.position.x = -50
-        // }
-        //this.animateWind()
+
         if (this.camera.fov > 80) {
             //.01
             this.camera.fov -= .01
             this.camera.updateProjectionMatrix();
         }
 
-        this.camera.lookAt(new THREE.Vector3(Math.sin(this.time / this.cameraMoveScale), Math.cos(this.time / this.cameraMoveScale) + 1, 0))
+        if (this.isCameraChange) {
+            if (this.camera.position.z >= 0) this.camera.position.z -= .01
+            if (this.camera.position.y <= 25) this.camera.position.y += .1
+            if (this.mainGroup.rotation.x >= 0) this.mainGroup.rotation.x -= .01
+        } else {
+            if (this.camera.position.z <= 3) this.camera.position.z += .01
+            if (this.camera.position.y >= -1) this.camera.position.y -= .1
+            if (this.mainGroup.rotation.x <= 0.6) this.mainGroup.rotation.x += .01
+        }
+
+        if (this.isCameraDecal) {
+            setTimeout(() => {
+                this.camera.position.x = (Math.cos(this.time))*15
+            }, Math.random() * 1000)
+        }
+
+        if (this.camera.position.x  > 0.5) {
+            this.camera.position.x -= .1
+        } else if (this.camera.position.x < 0.5) {
+            this.camera.position.x += .1
+        }
+
+        if (this.stopMove == true) {
+            this.camera.lookAt(new THREE.Vector3(0, 1, 0))
+        } else {
+            this.camera.lookAt(new THREE.Vector3(Math.sin(this.time / this.cameraMoveScale)/this.cameraMoveSpeed, Math.cos(this.time / this.cameraMoveScale)/this.cameraMoveSpeed + 1, 0))
+        }
         this.composer.render( this.scene, this.camera );
         //this.renderer.render(this.scene, this.camera);
 

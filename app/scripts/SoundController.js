@@ -8,8 +8,10 @@ export default class SoundController {
         this.musicReady = null
         this.onBeat = null
         this.cameraMove = null
+        this.cameraChange = null
+        this.cameraDecal =null
 
-        this.audioAnalyzer = new Sound(SrcMusic[index], Bpm[index], 60, this.playSound.bind(this), false)
+        this.audioAnalyzer = new Sound(SrcMusic[index], Bpm[index], 61, this.playSound.bind(this), false)
     }
 
     playSound() {
@@ -57,14 +59,31 @@ export default class SoundController {
             }}
         )
 
-        this.audioAnalyzer.after('offBeatKick', 60, ()=>{
+        this.audioAnalyzer.after('offBeatKick', 61, ()=>{
             this.kickBeat.off()
             this.beat.on()
         })
 
-        this.audioAnalyzer.after('WOUHOU', 270, () => {
-            this.cameraMove()
+        this.audioAnalyzer.between('changeCamOn', 75, 185, () => {
+            this.cameraChange('on')
+        }).after('changeCamOn', 185,()=>{
+            this.cameraChange('off')
         })
+
+        this.audioAnalyzer.between('WOUSH', 195, 270, () => {
+            this.cameraDecal('on')
+        })
+        this.audioAnalyzer.after('WOUSHoff', 270, () => {
+            this.cameraDecal('off')
+        })
+
+        this.audioAnalyzer.after('WOUHOUon', 270, () => {
+            this.cameraMove('on')
+        })
+        this.audioAnalyzer.after('WOUHOUoff', 320, () => {
+            this.cameraMove('off')
+        })
+
 
         
         // dancer.onceAt(10, function () {
