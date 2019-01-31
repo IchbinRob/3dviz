@@ -113,7 +113,7 @@ export default class App {
 
         
         this.ssaaRenderPass = new THREE.SSAARenderPass(this.scene, this.camera);
-        (this.quality === '1') ? this.ssaaRenderPass.sampleLevel = 1 : this.ssaaRenderPass.sampleLevel = 0
+        (this.quality === '1') ? this.ssaaRenderPass.sampleLevel = 0 : this.ssaaRenderPass.sampleLevel = 0
         
         this.ssaaRenderPass.unbiased = true;
         this.composer.addPass(this.ssaaRenderPass);

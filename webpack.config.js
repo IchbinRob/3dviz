@@ -11,7 +11,7 @@ module.exports = function(env) {
             THREE: 'three',
         }),
         // clean export folder
-        new CleanWebpackPlugin('dist', {
+        new CleanWebpackPlugin('docs', {
             root: __dirname
         }),
         // create styles css
@@ -58,7 +58,7 @@ module.exports = function(env) {
             main: './index.js'
         },
         output: {
-            path: path.resolve(__dirname, 'dist'),
+            path: path.resolve(__dirname, 'docs'),
             filename: env == 'prod' ? '[name].[chunkhash].js' : '[name].js',
         },
         module: {
